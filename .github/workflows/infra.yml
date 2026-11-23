@@ -1,0 +1,78 @@
+# Downstream modification: keep Microsoft infrastructure jobs upstream; see UPSTREAM.md.
+name: "infra"
+
+on:
+  push:
+    branches:
+      - main
+      - release-*
+  pull_request:
+    branches:
+      - main
+      - release-*
+
+jobs:
+  doc-and-lint:
+    if: github.repository == 'microsoft/playwright'
+    name: "docs & lint"
+    runs-on: ubuntu-24.04
+    steps:
+    - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+    - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+      with:
+        node-version: lts/*
+    - run: npm ci
+    - run: npm run build
+    - run: npx playwright install --with-deps
+    - run: npm run lint
+    - name: Verify clean tree
+      run: |
+        if [[ -n $(git status -s) ]]; then
+          echo "ERROR: tree is dirty after npm run build:"
+          git diff
+          exit 1
+        fi
+    - name: Audit prod NPM dependencies
+      run: node utils/check_audit.js
+      continue-on-error: true
+  tip-of-tree-gate:
+    if: github.repository == 'microsoft/playwright'
+    name: "tip-of-tree gate"
+    runs-on: ubuntu-latest
+    steps:
+    - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      with:
+        sparse-checkout: packages/playwright-core/browsers.json
+        sparse-checkout-cone-mode: false
+    - name: Fail when browsers.json is at tip-of-tree Chromium
+      run: |
+        REVISIONS=$(jq -r '.browsers[] | select(.name | startswith("chromium")) | .revision' packages/playwright-core/browsers.json)
+        echo "Chromium revisions: "$REVISIONS
+        if grep -q '^tot' <<< "$REVISIONS"; then
+          echo "::error::DO NOT MERGE: browsers.json is at tip-of-tree Chromium, which Playwright does not ship."
+          exit 1
+        fi
+  lint-snippets:
+    if: github.repository == 'microsoft/playwright'
+    name: "Lint snippets"
+    runs-on: ubuntu-latest
+    steps:
+    - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+    - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+      with:
+        node-version: lts/*
+    - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7.1.0
+      with:
+        python-version: '3.11'
+    - uses: actions/setup-dotnet@0f4a354dd5547a28c70b7853dbd95d5b67886e73 # v6.1.0
+      with:
+        dotnet-version: 8.0.x
+    - uses: actions/setup-java@77dd5b2ce225ea11469928ac317850245a74ae78 # v6.2.0
+      with:
+        distribution: 'zulu'
+        java-version: '21'
+    - run: npm ci
+    - run: pip install -r utils/doclint/linting-code-snippets/python/requirements.txt
+    - run: mvn package
+      working-directory: utils/doclint/linting-code-snippets/java
+    - run: node utils/doclint/linting-code-snippets/cli.js

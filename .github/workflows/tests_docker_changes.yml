@@ -1,0 +1,25 @@
+# Downstream modification: keep Microsoft infrastructure jobs upstream; see UPSTREAM.md.
+name: tests docker (changes)
+
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - 'utils/docker/**'
+      - '.github/workflows/tests_docker*.yml'
+  pull_request:
+    branches:
+      - main
+      - release-*
+    paths:
+      - 'utils/docker/**'
+      - '.github/workflows/tests_docker*.yml'
+
+jobs:
+  test_linux_docker:
+    if: github.repository == 'microsoft/playwright'
+    uses: ./.github/workflows/tests_docker.yml
+    permissions:
+      contents: read
+    secrets: inherit
